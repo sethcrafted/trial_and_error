@@ -34,4 +34,8 @@ We're currently at this stage, we're were getting multiple models setup and work
 on two different machines:
 - An M1 Pro Mac 
 - An AMD powered Mini-PC with 64 GB RAM and a Radeon iGPU]
-```
+
+## Conventions
+
+For tests, we'll make a sub-directory `tests` relative to the file. For example, if we have a file `path/to/foo.py`, 
+then the test associated should be `path/to/tests/test_foo.py`
