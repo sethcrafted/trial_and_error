@@ -9,7 +9,16 @@ def download_model(target_model):
     )
 
 def main():
-    download_model('Qwen/Qwen2-0.5B')    
+    model_list = [
+        'unsloth/llama-2-7b-chat-bnb-4bit',
+        'unsloth/llama-3-8b-Instruct-bnb-4bit',
+        'unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit',
+        'unsloth/Llama-3.2-3B-Instruct-bnb-4bit',
+        'unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF'
+    ]
+
+    for model in model_list:
+        download_model(model)    
 
 if __name__ == "__main__":
     main()
