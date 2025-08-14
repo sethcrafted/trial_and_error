@@ -5,8 +5,10 @@ import os
 import time
 import psutil
 import argparse
-from dataclasses import dataclass
-from typing import List
+import json
+import csv
+from dataclasses import dataclass, asdict
+from typing import List, Optional, Dict, Any
 
 @dataclass
 class PerformanceStats:
@@ -31,7 +33,7 @@ QWEN_MODELS = [
     ("./local/Qwen/Qwen3-0.6B/", "Qwen3-0.6B")
 ]
 
-def test_qwen(model_path, model_name, device_mode="cpu") -> PerformanceStats:
+def test_qwen(model_path, model_name, device_mode="cpu", custom_prompt=None, max_tokens=256) -> PerformanceStats:
     stats = PerformanceStats(
         model_name=model_name,
         model_load_time=0,
@@ -71,7 +73,7 @@ def test_qwen(model_path, model_name, device_mode="cpu") -> PerformanceStats:
         stats.model_load_time = time.time() - load_start
 
         # prepare the model input
-        prompt = "Give me a short introduction to large language model."
+        prompt = custom_prompt or "Give me a short introduction to large language model."
         messages = [
             {"role": "user", "content": prompt}
         ]
@@ -101,7 +103,7 @@ def test_qwen(model_path, model_name, device_mode="cpu") -> PerformanceStats:
         generation_start = time.time()
         generated_ids = model.generate(
             **model_inputs,
-            max_new_tokens=256  # Reduced for consistent testing
+            max_new_tokens=max_tokens
         )
         stats.generation_time = time.time() - generation_start
         
@@ -141,6 +143,26 @@ def test_qwen(model_path, model_name, device_mode="cpu") -> PerformanceStats:
         stats.total_time = time.time() - start_total_time
     
     return stats
+
+def export_results_json(all_stats: List[PerformanceStats], filename: str):
+    """Export results to JSON file"""
+    results = [asdict(stats) for stats in all_stats]
+    with open(filename, 'w') as f:
+        json.dump(results, f, indent=2)
+    print(f"Results exported to {filename}")
+
+def export_results_csv(all_stats: List[PerformanceStats], filename: str):
+    """Export results to CSV file"""
+    if not all_stats:
+        return
+        
+    fieldnames = all_stats[0].__dataclass_fields__.keys()
+    with open(filename, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for stats in all_stats:
+            writer.writerow(asdict(stats))
+    print(f"Results exported to {filename}")
 
 def print_performance_summary(all_stats: List[PerformanceStats]):
     """Print a summary table of performance statistics"""
@@ -195,9 +217,12 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python basic_model_test.py                 # Test all models on CPU (default)
-  python basic_model_test.py --cpu           # Explicitly test on CPU
-  python basic_model_test.py --gpu           # Test on GPU (requires CUDA/ROCm)
+  python basic_model_test.py                         # Test all models on CPU (default)
+  python basic_model_test.py --cpu                   # Explicitly test on CPU
+  python basic_model_test.py --gpu                   # Test on GPU (requires CUDA/ROCm)
+  python basic_model_test.py --models Qwen2-0.5B     # Test specific model only
+  python basic_model_test.py --output-json results.json  # Export results to JSON
+  python basic_model_test.py --prompt "Custom prompt"    # Use custom prompt
         """
     )
     
@@ -217,24 +242,98 @@ Examples:
         help="Run models on GPU (requires CUDA/ROCm setup)"
     )
     
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        help="Test specific models only (e.g., --models Qwen2-0.5B Qwen3-0.6B)"
+    )
+    
+    parser.add_argument(
+        "--output-json",
+        type=str,
+        help="Export results to JSON file"
+    )
+    
+    parser.add_argument(
+        "--output-csv",
+        type=str,
+        help="Export results to CSV file"
+    )
+    
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        default="Give me a short introduction to large language model.",
+        help="Custom prompt to use for testing"
+    )
+    
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=256,
+        help="Maximum new tokens to generate (default: 256)"
+    )
+    
     # Set CPU as default
     parser.set_defaults(device="cpu")
     
+    parser.add_argument(
+        "--config",
+        type=str,
+        help="Load configuration from JSON file"
+    )
+    
     return parser.parse_args()
+
+def load_config(config_path: str) -> Dict[str, Any]:
+    """Load configuration from JSON file"""
+    try:
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading config file {config_path}: {e}")
+        return {}
+
+def merge_config_with_args(args, config: Dict[str, Any]):
+    """Merge config file values with command line arguments"""
+    # Command line args take precedence over config file
+    for key, value in config.items():
+        if hasattr(args, key) and getattr(args, key) is None:
+            setattr(args, key, value)
+        elif hasattr(args, key.replace('-', '_')) and getattr(args, key.replace('-', '_')) is None:
+            setattr(args, key.replace('-', '_'), value)
+    return args
 
 def main():
     args = parse_args()
     
-    print(f"Testing all available Qwen models on {args.device.upper()}...")
+    # Load config file if specified
+    if args.config:
+        config = load_config(args.config)
+        args = merge_config_with_args(args, config)
+    
+    # Filter models if specific models requested
+    models_to_test = QWEN_MODELS
+    if args.models:
+        models_to_test = [(path, name) for path, name in QWEN_MODELS if name in args.models]
+        if not models_to_test:
+            print(f"Error: None of the requested models found in available models.")
+            print(f"Available models: {[name for _, name in QWEN_MODELS]}")
+            return
+    
+    model_count = len(models_to_test)
+    print(f"Testing {model_count} Qwen model{'s' if model_count != 1 else ''} on {args.device.upper()}...")
+    if args.prompt != "Give me a short introduction to large language model.":
+        print(f"Using custom prompt: '{args.prompt[:50]}{'...' if len(args.prompt) > 50 else '}'}") 
     print("=" * 60)
     
     all_stats = []
     
-    for model_path, model_name in QWEN_MODELS:
+    for model_path, model_name in models_to_test:
         if os.path.exists(model_path):
             print(f"\n🔍 Testing {model_name} on {args.device.upper()}")
             print("-" * 40)
-            stats = test_qwen(model_path, model_name, args.device)
+            stats = test_qwen(model_path, model_name, args.device, args.prompt, args.max_tokens)
             all_stats.append(stats)
             
             if stats.success:
@@ -257,6 +356,13 @@ def main():
     
     # Print performance summary
     print_performance_summary(all_stats)
+    
+    # Export results if requested
+    if args.output_json:
+        export_results_json(all_stats, args.output_json)
+    
+    if args.output_csv:
+        export_results_csv(all_stats, args.output_csv)
 
 if __name__ == "__main__":
     main()

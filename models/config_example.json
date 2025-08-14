@@ -1,0 +1,7 @@
+{
+  "device": "cpu",
+  "models": ["Qwen2-0.5B", "Qwen2.5-0.5B"],
+  "prompt": "Explain quantum computing in simple terms.",
+  "max-tokens": 128,
+  "output-json": "test_results.json"
+}
