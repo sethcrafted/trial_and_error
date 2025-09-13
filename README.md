@@ -6,3 +6,5 @@ I'm currently exploring LLMs. I like to get lost a bit along the way, but that's
 
 The plan is roughly to get a variety of models setup, learn a bit of web dev and visualization along the way, and setup something
 truly useful! 
+
+Bought a thinkpad!
